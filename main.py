@@ -51,17 +51,85 @@ def main():
 
                     All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
                     """
-    output = client.models.generate_content(model='gemini-2.0-flash-001', contents=messages, config=types.GenerateContentConfig(
-        tools=[available_functions], system_instruction=system_prompt))
     
-    # Check for function calls
-    if output.function_calls:
-        for function_call_part in output.function_calls:
-            # Inject working_directory into the function call
-            result = call_function(function_call_part, working_directory="./calculator")
-            print(f"Result: {result}")
-    else:
-        print(output.text)
+    # Multi-turn conversation loop (max 20 iterations)
+    max_iterations = 20
+    iteration = 0
+    
+    try:
+        while iteration < max_iterations:
+            iteration += 1
+            
+            try:
+                output = client.models.generate_content(model='gemini-2.0-flash-001', contents=messages, config=types.GenerateContentConfig(
+                    tools=[available_functions], system_instruction=system_prompt))
+            except Exception as e:
+                print(f"Error calling generate_content: {e}")
+                break
+            
+            # Add the assistant's response to the conversation
+            if output.candidates:
+                for candidate in output.candidates:
+                    messages.append(candidate.content)
+            
+            # Check if model is finished: no function calls AND has actual text content
+            has_function_calls = bool(output.function_calls)
+            
+            # Check for actual text parts (not just concatenated warnings)
+            has_text_response = False
+            if output.candidates:
+                for candidate in output.candidates:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            has_text_response = True
+                            break
+                    if has_text_response:
+                        break
+            
+            if not has_function_calls and has_text_response:
+                # Model is finished - print final response and exit
+                for candidate in output.candidates:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            print(part.text)
+                            break
+                break
+            elif has_function_calls:
+                # Process function calls
+                function_results = []
+                for function_call_part in output.function_calls:
+                    try:
+                        # Inject working_directory into the function call
+                        result = call_function(function_call_part, working_directory="./calculator")
+                        print(f"Function result: {result}")
+                        # Create a tool response for each function call
+                        function_results.append(
+                            types.Part.from_function_response(
+                                name=function_call_part.name,
+                                response={"result": result}
+                            )
+                        )
+                    except Exception as e:
+                        print(f"Error executing function {function_call_part.name}: {e}")
+                        function_results.append(
+                            types.Part.from_function_response(
+                                name=function_call_part.name,
+                                response={"error": str(e)}
+                            )
+                        )
+                # Add all function results as a user message to the conversation
+                messages.append(types.Content(role="user", parts=function_results))
+            else:
+                # No function calls and no text - shouldn't happen, but handle it
+                print("Model returned no response and no function calls.")
+                break
+        
+        # Check if we hit the max iterations limit
+        if iteration >= max_iterations:
+            print(f"Reached maximum iterations ({max_iterations}). Stopping agent.")
+    
+    except Exception as e:
+        print(f"Unexpected error in main loop: {e}")
     
     if verbose:
         # Show the user prompt and token usage only when verbose is enabled
