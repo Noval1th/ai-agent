@@ -65,3 +65,27 @@ def run_python_file(working_directory: str, file_path: str, args: Optional[List[
         output_parts.append(f"Process exited with code {completed_process.returncode}")
 
     return "\n".join(output_parts)
+
+schema_run_python_file = {
+    "name": "run_python_file",
+    "description": "Run a Python file within the working directory and capture its output.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "working_directory": {
+                "type": "string",
+                "description": "The base working directory from which to run the Python file.",
+            },
+            "file_path": {
+                "type": "string",
+                "description": "The relative path to the Python file within the working directory.",
+            },
+            "args": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of command-line arguments to pass to the Python file.",
+            },
+        },
+        "required": ["file_path"],
+    },
+}
